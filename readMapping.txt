@@ -1,0 +1,26 @@
+
+##### Script to download reference genome and perform read mapping ####
+
+mkdir ref_genome
+cd ref_genome
+
+# ref genome data
+# go to UCSC genome browser and navigate to download genome by chromosome
+# for chr 1: https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz
+wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr1.fa.gz
+gunzip chr1.fa.gz
+
+
+# install bwa
+git clone https://github.com/lh3/bwa.git
+cd bwa; make
+
+# build index
+cd ref_genome
+/workspace/ngs_internship_july2024/bwa/bwa index chr1.fa
+
+# map the reads
+mkdir read_mapping
+/workspace/ngs_internship_july2024/bwa/bwa mem -t 5  \
+    ref_genome/chr1.fa raw_data/SRR21019393_1_trimmed.fastq.gz raw_data/SRR21019393_2_trimmed.fastq.gz \
+    > read_mapping/sample1.sam
