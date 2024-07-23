@@ -53,7 +53,7 @@ gatk SelectVariants \
 ######### GERMLINE VARIANT DISCOVERY ###########
 Steps:
 1. haplotype caller
-2. consolidate GVCFs
+2. combine GVCFs
 3. VQSR/hard filtering based on number of samples and resources
 4. collecting metrics if using hard filtering
 
@@ -74,16 +74,16 @@ gatk HaplotypeCaller  \
    -O normal.g.vcf.gz \
    -ERC GVCF
 
-# consolidate GVCFs into db; selecting only chr1 for quick output
-gatk  GenomicsDBImport \
-      -V tumor.g.vcf.gz \
-      -V normal.g.vcf.gz \
-      --genomicsdb-workspace-path test_db \
-      -L chr1:1-1000000
+# Combine GVCFs (old version only)
+gatk CombineGVCFs \
+   -R ref_genome/Homo_sapiens_assembly38.fasta \
+   --variant normal.g.vcf.gz \
+   --variant tumor.g.vcf.gz \
+   -O cohort.g.vcf.gz
 
 gatk  GenotypeGVCFs \
    -R ref_genome/Homo_sapiens_assembly38.fasta \
-   -V gendb://test_db \
+   -V cohort.g.vcf.gz
    -O germline_variants/germline_variants.vcf.gz
 
 # hard filtering on snps
