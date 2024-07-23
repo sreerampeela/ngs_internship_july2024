@@ -1,0 +1,108 @@
+## inferring variants using GATK
+
+######## DATA ACCESS ###########
+# BAM files from GATK example data
+# get ref genome at gatk resource bundle
+wget https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.fasta
+wget https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.dict
+samtools faidx ref_genome/Homo_sapiens_assembly38.fasta
+#Known variants
+wget https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/hapmap_3.3.hg38.vcf.gz
+gatk IndexFeatureFile -I hapmap_3.3.hg38.vcf.gz
+
+
+######### SOMATIC VARIANT DISCOVERY #########
+Steps:
+1. Mutect2 - to call variants
+2. get pileup summaries
+3. calculate contamination
+4. filter mutect calls
+
+# index the BQSR file; using another file for demo here
+samtools index mapping_files/marked_duplicates.bam
+
+mkdir somatic_variants
+# Mutect2
+gatk Mutect2 -I mapping_files/marked_duplicates.bam \
+     -R ref_genome/Homo_sapiens_assembly38.fasta \
+     -O somatic_variants/somatic_variants.vcf.gz
+
+# get pile ups
+gatk GetPileupSummaries -I mapping_files/marked_duplicates.bam \
+   -V hapmap_3.3.hg38.vcf.gz \
+   -L hapmap_3.3.hg38.vcf.gz \
+   -O sample_pileups.table
+
+# calculate contamination
+gatk CalculateContamination -I sample_pileups.table -O sample_contamination.table
+
+# filter variants
+gatk FilterMutectCalls \
+   -R ref_genome/Homo_sapiens_assembly38.fasta \
+   -V somatic_variants/somatic_variants.vcf.gz \
+   --contamination-table sample_contamination.table \
+   -O somatic_variants/filtered.vcf.gz
+
+# Select specific variants
+gatk SelectVariants \
+    -R ref_genome/Homo_sapiens_assembly38.fasta \
+    -V somatic_variants/filtered.vcf.gz \
+    --select-type-to-include SNP \
+    -O somatic_variants/filtered_snps.vcf
+
+######### GERMLINE VARIANT DISCOVERY ###########
+Steps:
+1. haplotype caller
+2. consolidate GVCFs
+3. VQSR/hard filtering based on number of samples and resources
+4. collecting metrics if using hard filtering
+
+mkdir germline_variants
+
+# haplotype calling
+samtools index mapping_files/tumor.bam
+gatk HaplotypeCaller  \
+   -R ref_genome/Homo_sapiens_assembly38.fasta \
+   -I mapping_files/tumor.bam \
+   -O tumor.g.vcf.gz \
+   -ERC GVCF
+
+samtools index mapping_files/normal.bam
+gatk HaplotypeCaller  \
+   -R ref_genome/Homo_sapiens_assembly38.fasta \
+   -I mapping_files/normal.bam \
+   -O normal.g.vcf.gz \
+   -ERC GVCF
+
+# consolidate GVCFs into db; selecting only chr1 for quick output
+gatk  GenomicsDBImport \
+      -V tumor.g.vcf.gz \
+      -V normal.g.vcf.gz \
+      --genomicsdb-workspace-path test_db \
+      -L chr1:1-1000000
+
+gatk  GenotypeGVCFs \
+   -R ref_genome/Homo_sapiens_assembly38.fasta \
+   -V gendb://test_db \
+   -O germline_variants/germline_variants.vcf.gz
+
+# hard filtering on snps
+gatk SelectVariants \
+    -V germline_variants/germline_variants.vcf.gz \
+    -select-type SNP \
+    -O germline_variants/germline_snps.vcf.gz
+
+gatk VariantFiltration \
+    -V germline_variants/germline_snps.vcf.gz \
+    -filter "QD < 2.0" --filter-name "QD2" \
+    -filter "QUAL < 30.0" --filter-name "QUAL30" \
+    -O germline_variants/snps_filtered.vcf.gz
+
+gatk CollectVariantCallingMetrics \
+    -I germline_variants/snps_filtered.vcf.gz \
+    --DBSNP Homo_sapiens_assembly38.dbsnp138.vcf \
+    -SD ref_genome/Homo_sapiens_assembly38.dict \
+    -O germline_variants/germline_snps_metrics
+
+# implementations and testing
+check: https://hpc.nih.gov/training/gatk_tutorial/haplotype-caller.html
